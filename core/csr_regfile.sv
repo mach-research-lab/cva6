@@ -60,6 +60,10 @@ module csr_regfile
     input logic csr_write_fflags_i,
     // Mark the V state as dirty - ACC_DISPATCHER
     input logic dirty_v_state_i,
+    // MS update of a committing AME (Ztt) instruction - COMMIT_STAGE
+    input cva6_ztt_pkg::ame_op_t ame_op_i,
+    // The committing ame.acquire was granted - COMMIT_STAGE
+    input logic ame_acquire_success_i,
     // PC of instruction accessing the CSR - COMMIT_STAGE
     input logic [CVA6Cfg.VLEN-1:0] pc_i,
     // attempts to access a CSR without appropriate privilege - COMMIT_STAGE
@@ -92,6 +96,10 @@ module csr_regfile
     output logic [6:0] fprec_o,
     // Vector extension status - ID_STAGE
     output riscv::xs_t vs_o,
+    // Matrix extension status - ID_STAGE
+    output riscv::xs_t ms_o,
+    // Matrix extension virtual status - ID_STAGE
+    output riscv::xs_t vms_o,
     // interrupt management to id stage - ID_STAGE
     output irq_ctrl_t irq_ctrl_o,
     // Enable virtual address translation - EX_STAGE
@@ -272,6 +280,8 @@ module csr_regfile
   // CSR write causes us to mark the FPU state as dirty
   logic dirty_fp_state_csr;
   riscv::mstatus_rv_t mstatus_q, mstatus_d;
+  // core-side copy of the AME (Ztt) ownership state, tracked from committed acquire/release
+  logic ame_owned_q, ame_owned_d;
   riscv::hstatus_rv_t hstatus_q, hstatus_d;
   riscv::mstatus_rv_t vsstatus_q, vsstatus_d;
   logic [CVA6Cfg.XLEN-1:0] mstatus_extended;
@@ -393,17 +403,19 @@ module csr_regfile
   assign fs_o = mstatus_q.fs;
   assign vfs_o = (CVA6Cfg.RVH) ? vsstatus_q.fs : riscv::Off;
   assign vs_o = mstatus_q.vs;
+  assign ms_o = mstatus_q.ms;
+  assign vms_o = (CVA6Cfg.RVH) ? vsstatus_q.ms : riscv::Off;
   // ----------------
   // CSR Read logic
   // ----------------
   assign mstatus_extended = CVA6Cfg.IS_XLEN64 ? mstatus_q[CVA6Cfg.XLEN-1:0] :
-                              {mstatus_q.sd, mstatus_q.wpri3[7:0], mstatus_q[22:0]};
+                              {mstatus_q.sd, mstatus_q[30:0]};
   assign mstatush = {24'h0, mstatus_q.mpv, mstatus_q.gva, mstatus_q.mbe, mstatus_q.sbe, 4'h0};
   if (CVA6Cfg.RVH) begin
     if (CVA6Cfg.IS_XLEN64) begin : gen_vsstatus_64read
       assign vsstatus_extended = vsstatus_q[CVA6Cfg.XLEN-1:0];
     end else begin : gen_vsstatus_32read
-      assign vsstatus_extended = {vsstatus_q.sd, vsstatus_q.wpri3[7:0], vsstatus_q[22:0]};
+      assign vsstatus_extended = {vsstatus_q.sd, vsstatus_q[30:0]};
     end
   end else begin
     assign vsstatus_extended = '0;
@@ -1316,6 +1328,15 @@ module csr_regfile
             if (!CVA6Cfg.FpPresent) begin
               vsstatus_d.fs = riscv::Off;
             end
+            // hardwire to zero if matrix extension is not present
+            if (!CVA6Cfg.ZttEn) begin
+              vsstatus_d.ms = riscv::Off;
+            end
+            // MS cannot be turned Off while the matrix unit is owned
+            if (CVA6Cfg.ZttEn && ame_owned_q && vsstatus_d.ms == riscv::Off) begin
+              vsstatus_d = vsstatus_q;
+              update_access_exception = 1'b1;
+            end
             // this instruction has side-effects
             flush_o = 1'b1;
           end else begin
@@ -1389,11 +1410,20 @@ module csr_regfile
             if (!CVA6Cfg.RVV) begin
               mstatus_d.vs = riscv::Off;
             end
+            // hardwire to zero if matrix extension is not present
+            if (!CVA6Cfg.ZttEn) begin
+              mstatus_d.ms = riscv::Off;
+            end
             // If h-extension is not enabled, priv level HS is reserved
             if (!CVA6Cfg.RVH) begin
               if (mstatus_d.mpp == riscv::PRIV_LVL_HS) begin
                 mstatus_d.mpp = mstatus_q.mpp;
               end
+            end
+            // MS cannot be turned Off while the matrix unit is owned
+            if (CVA6Cfg.ZttEn && ame_owned_q && mstatus_d.ms == riscv::Off) begin
+              mstatus_d = mstatus_q;
+              update_access_exception = 1'b1;
             end
             // this instruction has side-effects
             flush_o = 1'b1;
@@ -1617,6 +1647,9 @@ module csr_regfile
           if (!CVA6Cfg.RVV) begin
             mstatus_d.vs = riscv::Off;
           end
+          if (!CVA6Cfg.ZttEn) begin
+            mstatus_d.ms = riscv::Off;
+          end
           if (!CVA6Cfg.RVS) begin
             mstatus_d.sie  = riscv::Off;
             mstatus_d.spie = riscv::Off;
@@ -1639,7 +1672,8 @@ module csr_regfile
               (!CVA6Cfg.RVU & mstatus_d.mpp == riscv::PRIV_LVL_U)) begin
             mstatus_d.mpp = mstatus_q.mpp;
           end
-          mstatus_d.wpri3 = 9'b0;
+          mstatus_d.wpri3 = '0;
+          mstatus_d.wpri5 = '0;
           mstatus_d.wpri4 = '0;
           mstatus_d.wpri1 = 1'b0;
           mstatus_d.wpri2 = 1'b0;
@@ -1647,6 +1681,11 @@ module csr_regfile
           // Mirror MBE
           mstatus_d.sbe   = mstatus_d.mbe;
           mstatus_d.ube   = mstatus_d.mbe;
+          // MS cannot be turned Off while the matrix unit is owned
+          if (CVA6Cfg.ZttEn && ame_owned_q && mstatus_d.ms == riscv::Off) begin
+            mstatus_d = mstatus_q;
+            update_access_exception = 1'b1;
+          end
           // this register has side-effects on other registers, flush the pipeline
           flush_o         = 1'b1;
         end
@@ -2060,14 +2099,42 @@ module csr_regfile
     if (CVA6Cfg.RVV && dirty_v_state_i) begin
       mstatus_d.vs = riscv::Dirty;
     end
+    // update the matrix extension state and the ownership copy from committed AME instructions
+    ame_owned_d = ame_owned_q;
+    if (CVA6Cfg.ZttEn) begin
+      unique case (ame_op_i)
+        cva6_ztt_pkg::AME_OP_ACQUIRE: begin
+          // only a new grant resets the state, a repeated acquire leaves MS untouched
+          if (ame_acquire_success_i && !ame_owned_q) begin
+            ame_owned_d  = 1'b1;
+            mstatus_d.ms = riscv::Initial;
+            if (CVA6Cfg.RVH && v_q) vsstatus_d.ms = riscv::Initial;
+          end
+        end
+        cva6_ztt_pkg::AME_OP_RELEASE: begin
+          if (ame_owned_q) begin
+            ame_owned_d  = 1'b0;
+            mstatus_d.ms = riscv::Initial;
+            if (CVA6Cfg.RVH && v_q) vsstatus_d.ms = riscv::Initial;
+          end
+        end
+        cva6_ztt_pkg::AME_OP_DIRTY: begin
+          mstatus_d.ms = riscv::Dirty;
+          if (CVA6Cfg.RVH && v_q) vsstatus_d.ms = riscv::Dirty;
+        end
+        default: ;
+      endcase
+    end
     // hardwired extension registers
-    if (CVA6Cfg.RVS || CVA6Cfg.RVF) begin
-      mstatus_d.sd = (mstatus_d.xs == riscv::Dirty) | (mstatus_d.fs == riscv::Dirty);
+    if (CVA6Cfg.RVS || CVA6Cfg.RVF || CVA6Cfg.ZttEn) begin
+      mstatus_d.sd = (mstatus_d.xs == riscv::Dirty) | (mstatus_d.fs == riscv::Dirty) |
+                     (mstatus_d.ms == riscv::Dirty);
     end else begin
       mstatus_d.sd = riscv::Off;
     end
     if (CVA6Cfg.RVH) begin
-      vsstatus_d.sd = (vsstatus_d.xs == riscv::Dirty) | (vsstatus_d.fs == riscv::Dirty);
+      vsstatus_d.sd = (vsstatus_d.xs == riscv::Dirty) | (vsstatus_d.fs == riscv::Dirty) |
+                      (vsstatus_d.ms == riscv::Dirty);
     end
 
     // reserve PMPCFG bits 5 and 6 (hardwire to 0)
@@ -2861,6 +2928,7 @@ module csr_regfile
       end
       // machine mode registers
       mstatus_q        <= 64'b0;
+      ame_owned_q      <= 1'b0;
       // set to boot address + direct mode + 4 byte offset which is the initial trap
       mtvec_rst_load_q <= 1'b1;
       mtvec_q          <= '0;
@@ -2960,6 +3028,7 @@ module csr_regfile
       end
       // machine mode registers
       mstatus_q        <= mstatus_d;
+      ame_owned_q      <= ame_owned_d;
       mtvec_rst_load_q <= 1'b0;
       mtvec_q          <= mtvec_d;
       mip_q            <= mip_d;

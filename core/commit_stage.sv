@@ -32,6 +32,10 @@ module commit_stage
     output exception_t exception_o,
     // Mark the F state as dirty - CSR_REGFILE
     output logic dirty_fp_state_o,
+    // MS update of a committing AME (Ztt) instruction - CSR_REGFILE
+    output cva6_ztt_pkg::ame_op_t ame_op_o,
+    // The committing ame.acquire was granted - CSR_REGFILE
+    output logic ame_acquire_success_o,
     // TO_BE_COMPLETED - CSR_REGFILE
     input logic single_step_i,
     // The instruction we want to commit - ISSUE_STAGE
@@ -128,6 +132,13 @@ module commit_stage
       ))) | (commit_instr_i[i].fu == ACCEL && commit_instr_i[i].vfp);
     end
   end
+
+  // Update the MS state when an offloaded AME instruction retires (always on port 0)
+  assign ame_op_o = (CVA6Cfg.ZttEn && commit_ack_o[0] && commit_instr_i[0].valid &&
+                     !commit_instr_i[0].ex.valid && !commit_drop_i[0] &&
+                     commit_instr_i[0].fu == CVXIF) ? commit_instr_i[0].ame_op :
+                                                      cva6_ztt_pkg::AME_OP_NONE;
+  assign ame_acquire_success_o = commit_instr_i[0].result[cva6_ztt_pkg::ACQUIRE_SUCCESS_BIT];
 
   assign commit_tran_id_o = commit_instr_i[0].trans_id;
 

@@ -61,7 +61,9 @@ package riscv;
     logic sd;  // signal dirty state - read-only
     logic [62:34] wpri6;  // writes preserved reads ignored
     xlen_e uxl;  // variable user mode xlen - hardwired to zero
-    logic [11:0] wpri5;  // writes preserved reads ignored
+    logic [4:0] wpri7;  // writes preserved reads ignored
+    xs_t ms;  // matrix extension register (Ztt)
+    logic [4:0] wpri5;  // writes preserved reads ignored
     logic mxr;  // make executable readable
     logic sum;  // permit supervisor user memory access
     logic wpri4;  // writes preserved reads ignored
@@ -106,7 +108,9 @@ package riscv;
     logic sbe;  // endianness memory accesses made from S-mode
     xlen_e sxl;  // variable supervisor mode xlen - hardwired to zero
     xlen_e uxl;  // variable user mode xlen - hardwired to zero
-    logic [8:0] wpri3;  // writes preserved reads ignored
+    logic [4:0] wpri3;  // writes preserved reads ignored
+    xs_t ms;  // matrix extension register (Ztt)
+    logic [1:0] wpri5;  // writes preserved reads ignored
     logic tsr;  // trap sret
     logic tw;  // time wait
     logic tvm;  // trap virtual memory
@@ -736,6 +740,7 @@ package riscv;
   localparam logic [63:0] SSTATUS_XS = 'h00018000;
   localparam logic [63:0] SSTATUS_SUM = 'h00040000;
   localparam logic [63:0] SSTATUS_MXR = 'h00080000;
+  localparam logic [63:0] SSTATUS_MS = 'h06000000;
   localparam logic [63:0] SSTATUS_UPIE = 'h00000010;
   localparam logic [63:0] SSTATUS_UXL = 64'h0000000300000000;
   // CSR Bit Implementation Masks

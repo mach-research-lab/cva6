@@ -122,6 +122,7 @@ module cva6
       logic is_double_rd_macro_instr;  // is double move decoded 32bit instruction of macro definition
       logic vfp;  // is this a vector floating-point instruction?
       logic is_zcmt;  //is a zcmt instruction
+      cva6_ztt_pkg::ame_op_t ame_op;  // MS update on commit of an offloaded AME (Ztt) instruction
     },
     localparam type writeback_t = struct packed {
       logic valid;  // wb data is valid
@@ -521,6 +522,8 @@ module cva6
   logic csr_commit_commit_ex;
   logic dirty_fp_state;
   logic dirty_v_state;
+  cva6_ztt_pkg::ame_op_t ame_op_commit;
+  logic ame_acquire_success_commit;
   // LSU Commit
   logic lsu_commit_commit_ex;
   logic lsu_commit_ready_ex_commit;
@@ -565,6 +568,8 @@ module cva6
   logic [2:0] frm_csr_id_issue_ex;
   logic [6:0] fprec_csr_ex;
   riscv::xs_t vs;
+  riscv::xs_t ms;
+  riscv::xs_t vms;
   logic enable_translation_csr_ex;
   logic enable_g_translation_csr_ex;
   logic en_ld_st_translation_csr_ex;
@@ -776,6 +781,8 @@ module cva6
       .vfs_i                  (vfs),
       .frm_i                  (frm_csr_id_issue_ex),
       .vs_i                   (vs),
+      .ms_i                   (ms),
+      .vms_i                  (vms),
       .irq_i                  (irq_i),
       .irq_ctrl_i             (irq_ctrl_csr_id),
       .debug_mode_i           (debug_mode),
@@ -1162,6 +1169,8 @@ module cva6
       .flush_dcache_i                     (dcache_flush_ctrl_cache),
       .exception_o                        (ex_commit),
       .dirty_fp_state_o                   (dirty_fp_state),
+      .ame_op_o                           (ame_op_commit),
+      .ame_acquire_success_o              (ame_acquire_success_commit),
       .single_step_i                      (single_step_csr_commit || single_step_acc_commit),
       .commit_instr_i                     (commit_instr_id_commit),
       .commit_drop_i                      (commit_drop_id_commit),
@@ -1237,6 +1246,8 @@ module cva6
       .dirty_fp_state_i                   (dirty_fp_state),
       .csr_write_fflags_i                 (csr_write_fflags_commit_cs),
       .dirty_v_state_i                    (dirty_v_state),
+      .ame_op_i                           (ame_op_commit),
+      .ame_acquire_success_i              (ame_acquire_success_commit),
       .pc_i                               (pc_commit),
       .csr_exception_o                    (csr_exception_csr_commit),
       .epc_o                              (epc_commit_pcgen),
@@ -1253,6 +1264,8 @@ module cva6
       .frm_o                              (frm_csr_id_issue_ex),
       .fprec_o                            (fprec_csr_ex),
       .vs_o                               (vs),
+      .ms_o                               (ms),
+      .vms_o                              (vms),
       .irq_ctrl_o                         (irq_ctrl_csr_id),
       .en_translation_o                   (enable_translation_csr_ex),
       .en_g_translation_o                 (enable_g_translation_csr_ex),

@@ -3,6 +3,9 @@
 > [!IMPORTANT]  
 > This ``master`` branch is protected and does not accept new pull requests. It is kept online for users who want to continue integrating legacy versions. Please direct new contributions to the ``main`` branch, which has become the default CVA6 branch.
 
+> [!NOTE]
+> This fork adds Attached Matrix Extension (Ztt v0.6) support over CV-X-IF. See [ZTT.md](ZTT.md).
+
 CVA6 is a 6-stage, single-issue, in-order CPU which implements the 64-bit RISC-V instruction set. It fully implements I, M, A and C extensions as specified in Volume I: User-Level ISA V 2.3 as well as the draft privilege extension 1.10. It implements three privilege levels M, S, U to fully support a Unix-like operating system. Furthermore, it is compliant to the draft external debug spec 0.13.
 
 It has a configurable size, separate TLBs, a hardware PTW and branch-prediction (branch target buffer and branch history table). The primary design goal was on reducing critical path length.

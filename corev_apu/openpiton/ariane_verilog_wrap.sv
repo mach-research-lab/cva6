@@ -161,6 +161,7 @@ module ariane_verilog_wrap
     CachedRegionAddrBase:   CachedRegionAddrBase,
     CachedRegionLength:     CachedRegionLength,
     CvxifEn:                CvxifEn,
+    ZttEn: bit'(0),
     CoproType:              config_pkg::COPRO_NONE,  // No coprocessor
     NOCType:                SwapEndianess ? NOC_TYPE_L15_BIG_ENDIAN : NOC_TYPE_L15_LITTLE_ENDIAN,
     AxiAddrWidth:           40,

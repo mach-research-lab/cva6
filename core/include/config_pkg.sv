@@ -170,6 +170,8 @@ package config_pkg;
     logic [NrMaxRules-1:0][63:0] CachedRegionLength;
     // CV-X-IF coprocessor interface enable
     bit                          CvxifEn;
+    // Attached Matrix Extension (Ztt v0.6) support over CV-X-IF
+    bit                          ZttEn;
     // Coprocessor type
     copro_type_t                 CoproType;
     // NOC bus type
@@ -327,6 +329,7 @@ package config_pkg;
     bit          RVZCMT;
     bit          XFVec;
     bit          CvxifEn;
+    bit          ZttEn;
     copro_type_t CoproType;
     bit          RVZiCond;
     bit          RVZiCbom;
@@ -486,6 +489,8 @@ package config_pkg;
     assert (!(Cfg.RVS && !Cfg.SoftwareInterruptEn));
     assert (!(Cfg.RVH && !Cfg.SoftwareInterruptEn));
     assert (!(Cfg.RVZCMT && ~Cfg.MmuPresent));
+    // Ztt instructions and CSRs are executed by a coprocessor attached over CV-X-IF
+    assert (!(Cfg.ZttEn && !Cfg.CvxifEn));
     // Zcmp is incompatible with Zcd (compressed double-precision FP loads/stores,
     // automatically present whenever both C and D are implemented), due to
     // opcode collisions.

@@ -74,6 +74,10 @@ module decoder
     input logic [2:0] frm_i,
     // Vector extension status - CSR_REGFILE
     input riscv::xs_t vs_i,
+    // Matrix extension status - CSR_REGFILE
+    input riscv::xs_t ms_i,
+    // Matrix extension virtual status - CSR_REGFILE
+    input riscv::xs_t vms_i,
     // Trap virtual memory - CSR_REGFILE
     input logic tvm_i,
     // Timeout wait - CSR_REGFILE
@@ -120,6 +124,18 @@ module decoder
   assign instr = riscv::instruction_t'(instruction_i);
   // transformed instruction
   logic [31:0] tinst;
+  // AME (Ztt) instruction or CSR access while MS is Off: trap locally, do not offload
+  logic ame_disabled;
+  logic is_ame_instr;
+  logic is_ame_csr_access;
+  logic ame_trap;
+  assign ame_disabled = CVA6Cfg.ZttEn && (ms_i == riscv::Off ||
+                                          (CVA6Cfg.RVH && v_i && vms_i == riscv::Off));
+  assign is_ame_instr = CVA6Cfg.ZttEn && cva6_ztt_pkg::is_ame_instr(instruction_i);
+  assign is_ame_csr_access = CVA6Cfg.ZttEn && instr.itype.opcode == riscv::OpcodeSystem &&
+                             !(instr.itype.funct3 inside {3'b000, 3'b100}) &&
+                             cva6_ztt_pkg::is_ame_csr(instr.itype.imm);
+  assign ame_trap = (is_ame_instr || is_ame_csr_access) && ame_disabled;
   // --------------------
   // Immediate select
   // --------------------
@@ -197,7 +213,8 @@ module decoder
     instruction_o.bp                       = branch_predict_i;
     instruction_o.vfp                      = 1'b0;
     instruction_o.is_zcmt                  = is_zcmt_i;
-    ecall                                  = 1'b0;
+    instruction_o.ame_op                   = cva6_ztt_pkg::AME_OP_NONE;
+    ecall                                 = 1'b0;
     ebreak                                 = 1'b0;
     check_fprm                             = 1'b0;
     tinst                                  = 32'h0;
@@ -1739,8 +1756,17 @@ module decoder
         default: illegal_instr = 1'b1;
       endcase
     end
+    if (ame_trap) begin
+      instruction_o.fu = NONE;
+      illegal_instr = 1'b1;
+    end else if (is_ame_csr_access) begin
+      // AME CSRs live in the coprocessor: offload the access over CV-X-IF instead of
+      // executing it in the CSR unit. The coprocessor decodes the zimm forms itself.
+      instruction_o.use_zimm = 1'b0;
+      illegal_instr = 1'b1;
+    end
     if (CVA6Cfg.CvxifEn) begin
-      if (~ex_i.valid && (is_illegal_i || illegal_instr)) begin
+      if (~ex_i.valid && (is_illegal_i || illegal_instr) && !ame_trap) begin
         instruction_o.fu = CVXIF;
         instruction_o.rs1 = instr.r4type.rs1;
         instruction_o.rs2 = instr.r4type.rs2;
@@ -1750,6 +1776,17 @@ module decoder
                                  instr.rtype.opcode == riscv::OpcodeMsub ||
                                  instr.rtype.opcode == riscv::OpcodeNmadd ||
                                  instr.rtype.opcode == riscv::OpcodeNmsub ? RS3 : MUX_RD_RS3;
+        // tag offloaded AME instructions with the MS update they cause on commit
+        if (cva6_ztt_pkg::is_ame_acquire(instruction_i) && CVA6Cfg.ZttEn)
+          instruction_o.ame_op = cva6_ztt_pkg::AME_OP_ACQUIRE;
+        else if (cva6_ztt_pkg::is_ame_release(instruction_i) && CVA6Cfg.ZttEn)
+          instruction_o.ame_op = cva6_ztt_pkg::AME_OP_RELEASE;
+        else if (is_ame_instr)
+          instruction_o.ame_op = cva6_ztt_pkg::AME_OP_DIRTY;
+        // CSRRW/CSRRWI always write, the set/clear forms only when rs1/uimm is non-zero
+        else if (is_ame_csr_access &&
+                 (instr.itype.funct3[1:0] == 2'b01 || instr.itype.rs1 != '0))
+          instruction_o.ame_op = cva6_ztt_pkg::AME_OP_DIRTY;
       end
     end
 
@@ -1888,7 +1925,7 @@ module decoder
       // check here if we decoded an invalid instruction or if the compressed decoder already decoded
       // a invalid instruction
       if (illegal_instr || is_illegal_i) begin
-        if (!CVA6Cfg.CvxifEn) instruction_o.ex.valid = 1'b1;
+        if (!CVA6Cfg.CvxifEn || ame_trap) instruction_o.ex.valid = 1'b1;
         // we decoded an illegal exception here
         instruction_o.ex.cause = riscv::ILLEGAL_INSTR;
       end else if (CVA6Cfg.RVH && virtual_illegal_instr) begin

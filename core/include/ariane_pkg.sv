@@ -120,6 +120,7 @@ package ariane_pkg;
     | riscv::SSTATUS_XS
     | riscv::SSTATUS_SUM
     | riscv::SSTATUS_MXR
+    | riscv::SSTATUS_MS
     | riscv::SSTATUS_UPIE
     | riscv::SSTATUS_SPIE
     | riscv::SSTATUS_UXL
@@ -131,7 +132,8 @@ package ariane_pkg;
                                                     | riscv::SSTATUS_SPP
                                                     | riscv::SSTATUS_FS
                                                     | riscv::SSTATUS_SUM
-                                                    | riscv::SSTATUS_MXR;
+                                                    | riscv::SSTATUS_MXR
+                                                    | riscv::SSTATUS_MS;
 
   localparam logic [63:0] HSTATUS_WRITE_MASK      = riscv::HSTATUS_VSBE
                                                     | riscv::HSTATUS_GVA

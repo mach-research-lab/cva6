@@ -67,6 +67,10 @@ module id_stage #(
     input logic [2:0] frm_i,
     // Vector extension status - CSR_REGFILE
     input riscv::xs_t vs_i,
+    // Matrix extension status - CSR_REGFILE
+    input riscv::xs_t ms_i,
+    // Matrix extension virtual status - CSR_REGFILE
+    input riscv::xs_t vms_i,
     // Level sensitive (async) interrupts - SUBSYSTEM
     input logic [1:0] irq_i,
     // Interrupt control status - CSR_REGFILE
@@ -348,6 +352,8 @@ module id_stage #(
         .vfs_i,
         .frm_i,
         .vs_i,
+        .ms_i,
+        .vms_i,
         .tvm_i,
         .tw_i,
         .vtw_i,
