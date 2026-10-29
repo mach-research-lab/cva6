@@ -5,24 +5,32 @@ Matrix Extension, AME) coprocessor from CVA6. The coprocessor is attached over
 CV-X-IF, which remains the **only** interface between the core and the matrix
 unit: no extra ports, no changes to the CV-X-IF protocol.
 
-The first user is the MMAU (MACH Research Lab, DARE SGA1), which depends on this
-fork. Everything MMAU-specific lives in the MMAU repository.
-
-> **Status:** implemented but **not yet compiled or simulated**. The first build
-> happens in the MMAU integration. See [Status and next steps](#status-and-next-steps).
-
 
 ## Enabling
 
-Set both flags in the CVA6 configuration package:
+Use the Bender target `cv64a6_imafdc_sv39_ztt`
+([`core/include/cv64a6_imafdc_sv39_ztt_config_pkg.sv`](core/include/cv64a6_imafdc_sv39_ztt_config_pkg.sv)).
+It is the standard `cv64a6_imafdc_sv39` configuration with Ztt enabled. From a
+depending repository:
+
+```yaml
+dependencies:
+  cva6: { git: "https://github.com/mach-research-lab/cva6.git", rev: "ztt-v0.6.1" }
+```
+
+```sh
+bender script <tool> -t cv64a6_imafdc_sv39_ztt
+```
+
+To build a custom configuration, set both flags in its configuration package:
 
 ```systemverilog
 CvxifEn: bit'(1),
 ZttEn:   bit'(1),
 ```
 
-`config_pkg::check_cfg` asserts that `ZttEn` requires `CvxifEn`. Every config
-shipped in this repository sets `ZttEn: bit'(0)`. With `ZttEn = 0` the core
+`config_pkg::check_cfg` asserts that `ZttEn` requires `CvxifEn`. Every other
+config in this repository sets `ZttEn: bit'(0)`. With `ZttEn = 0` the core
 behaves exactly as upstream CVA6.
 
 
@@ -115,6 +123,7 @@ CVA6 does not enforce this for AME CSRs, because they bypass its CSR unit.
 | File | Change |
 |---|---|
 | `core/include/cva6_ztt_pkg.sv` | new: encodings, CSR addresses, helpers, `ame_op_t` |
+| `core/include/cv64a6_imafdc_sv39_ztt_config_pkg.sv` | new: Ztt configuration, Bender target `cv64a6_imafdc_sv39_ztt` |
 | `core/include/config_pkg.sv`, `build_config_pkg.sv` | `ZttEn` flag and config check |
 | `core/include/*_config_pkg.sv` and other config packages | `ZttEn: bit'(0)` |
 | `core/include/riscv_pkg.sv` | MS field in `mstatus_rv_t` / `sstatus_rv_t`, `SSTATUS_MS` |
@@ -124,17 +133,3 @@ CVA6 does not enforce this for AME CSRs, because they bypass its CSR unit.
 | `core/commit_stage.sv` | reports `ame_op` and the acquire result at commit |
 | `core/id_stage.sv`, `core/cva6.sv` | wiring; `ame_op` field in `scoreboard_entry_t` |
 | `Bender.yml`, `Flist.ariane`, `core/Flist.cva6`, `src_files.yml` | add `cva6_ztt_pkg.sv` after `riscv_pkg.sv` |
-
-
-## Status and next steps
-
-- [ ] **Compile and elaborate** with `ZttEn = 1` and `ZttEn = 0` (Verilator lint
-  or slang). Nothing has been built yet.
-- [ ] **Integrate in the MMAU** with a config that sets `CvxifEn = 1` and
-  `ZttEn = 1`, then check that:
-  - AME instructions and AME CSR accesses trap while MS is Off and never reach
-    CV-X-IF;
-  - acquire sets MS to Initial, AME operations set Dirty, release sets Initial;
-  - writing MS = Off while owned traps.
-- [ ] Optional: standalone tests with a stub coprocessor based on
-  `core/cvxif_example`, and an upstream regression with `ZttEn = 0`.
